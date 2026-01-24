@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Auto Like</title>
+  <style>
+    body { font-family: sans-serif; margin: 10px; min-width: 180px; }
+    button { width: 100%; padding: 8px; margin-top: 8px; cursor: pointer; }
+    .row { display: flex; gap: 8px; }
+    .row button { width: 50%; }
+    #status { margin-top: 10px; font-size: 12px; }
+    .hint { margin-top: 8px; font-size: 11px; opacity: 0.8; }
+  </style>
+</head>
+<body>
+  <div><strong>Tinder Auto Like</strong></div>
+  <div class="row">
+    <button id="startBtn">Start</button>
+    <button id="stopBtn">Stop</button>
+  </div>
+  <div id="status"></div>
+  <div class="hint">Works only on tinder.com/app/recs</div>
+  <script src="popup.js"></script>
+</body>
+</html>

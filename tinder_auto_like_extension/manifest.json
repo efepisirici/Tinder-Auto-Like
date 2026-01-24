@@ -1,0 +1,33 @@
+{
+  "name": "Tinder Auto Like",
+  "version": "1.1",
+  "manifest_version": 3,
+  "description": "Automatically open the profile and click the like button on Tinder's recommendations page.",
+  "permissions": [
+    "activeTab",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://tinder.com/*"
+  ],
+  "action": {
+    "default_title": "Auto Like",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon16.png",
+      "32": "icon32.png",
+      "48": "icon48.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://tinder.com/app/recs*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}
