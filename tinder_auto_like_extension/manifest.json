@@ -1,17 +1,18 @@
 {
   "name": "Tinder Auto Like",
-  "version": "1.1",
+  "version": "1.4.4",
   "manifest_version": 3,
-  "description": "Automatically open the profile and click the like button on Tinder's recommendations page.",
+  "description": "Automates Tinder Web recs: refresh once, open profile, apply filters (age/distance/photos/keywords), then like or nope in a loop.",
   "permissions": [
     "activeTab",
-    "tabs"
+    "tabs",
+    "storage"
   ],
   "host_permissions": [
     "https://tinder.com/*"
   ],
   "action": {
-    "default_title": "Auto Like",
+    "default_title": "Tinder Auto Like",
     "default_popup": "popup.html",
     "default_icon": {
       "16": "icon16.png",
