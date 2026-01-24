@@ -1,26 +1,106 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Auto Like</title>
-  <style>
-    body { font-family: sans-serif; margin: 10px; min-width: 180px; }
-    button { width: 100%; padding: 8px; margin-top: 8px; cursor: pointer; }
-    .row { display: flex; gap: 8px; }
-    .row button { width: 50%; }
-    #status { margin-top: 10px; font-size: 12px; }
-    .hint { margin-top: 8px; font-size: 11px; opacity: 0.8; }
-  </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tinder Auto Like</title>
+  <link rel="stylesheet" href="popup.css" />
 </head>
 <body>
-  <div><strong>Tinder Auto Like</strong></div>
-  <div class="row">
-    <button id="startBtn">Start</button>
-    <button id="stopBtn">Stop</button>
+  <div class="card">
+    <div class="header">
+      <div class="title">Tinder Auto Like</div>
+      <div id="status" class="status">—</div>
+    </div>
+
+    <div class="section">
+      <div class="row">
+        <div class="label">Age Range</div>
+        <label class="switch">
+          <input id="ageEnabled" type="checkbox">
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="range-row">
+        <input id="ageMin" type="range" min="18" max="75" step="1">
+        <input id="ageMax" type="range" min="18" max="75" step="1">
+      </div>
+      <div class="range-values">
+        <span id="ageMinVal">18</span>
+        <span id="ageMaxVal">75</span>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="row">
+        <div class="label">Max. Distance (km)</div>
+        <label class="switch">
+          <input id="distEnabled" type="checkbox">
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="range-row single">
+        <input id="maxKm" type="range" min="1" max="150" step="1">
+      </div>
+      <div class="range-values">
+        <span></span>
+        <span id="maxKmVal">50</span>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="row">
+        <div class="label">Min. Pictures</div>
+        <label class="switch">
+          <input id="picsEnabled" type="checkbox">
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="range-row single">
+        <input id="minPics" type="range" min="1" max="10" step="1">
+      </div>
+      <div class="range-values">
+        <span></span>
+        <span id="minPicsVal">2</span>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="row">
+        <div class="label">Banned Keywords</div>
+        <label class="switch">
+          <input id="kwEnabled" type="checkbox">
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div id="chips" class="chips"></div>
+
+      <div class="chip-add">
+        <input id="kwInput" type="text" placeholder="Add keyword (e.g., ig)" />
+        <button id="kwAddBtn" class="btn small">+</button>
+      </div>
+      <div class="hint">Keywords are matched case-insensitively against “About me”.</div>
+    </div>
+
+
+    <div class="section">
+      <div class="row">
+        <div class="label">Trace</div>
+        <button id="clearLogBtn" class="btn ghost small">Clear</button>
+      </div>
+      <div id="logList" class="log"></div>
+    </div>
+    <div class="actions">
+      <button id="startBtn" class="btn primary">Start</button>
+      <button id="stopBtn" class="btn danger">Stop</button>
+    </div>
+
   </div>
-  <div id="status"></div>
-  <div class="hint">Works only on tinder.com/app/recs</div>
+
   <script src="popup.js"></script>
 </body>
 </html>
