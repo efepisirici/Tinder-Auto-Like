@@ -1,23 +1,31 @@
 // popup.js - settings UI + Start/Stop + Trace
 const DEFAULTS = {
-  ageEnabled: true, ageMin: 25, ageMax: 35,
-  distEnabled: true, maxKm: 50,
-  picsEnabled: false, minPics: 2,
-  kwEnabled: true, bannedKeywords: []
+  ageEnabled: true,
+  ageMin: 20,
+  ageMax: 35,
+  distEnabled: true,
+  maxKm: 100,
+  picsEnabled: false,
+  minPics: 2,
+  kwEnabled: true,
+  bannedKeywords: ["gay", "trans",  "model", "onlyfans"]
 };
 
 const LOG_KEY = "tal_log";
 const MAX_LOG = 60;
 
 function $(id){ return document.getElementById(id); }
+
 function setStatus(text){ $("status").textContent = text || "—"; }
 
 function fmtTime(ts){
-  const d = new Date(ts);
-  const hh = String(d.getHours()).padStart(2,"0");
-  const mm = String(d.getMinutes()).padStart(2,"0");
-  const ss = String(d.getSeconds()).padStart(2,"0");
-  return `${hh}:${mm}:${ss}`;
+  try{
+    const d = new Date(ts);
+    const hh = String(d.getHours()).padStart(2,"0");
+    const mm = String(d.getMinutes()).padStart(2,"0");
+    const ss = String(d.getSeconds()).padStart(2,"0");
+    return `${hh}:${mm}:${ss}`;
+  }catch{ return ""; }
 }
 
 async function appendLog(message){
@@ -25,7 +33,8 @@ async function appendLog(message){
   const { [LOG_KEY]: cur } = await chrome.storage.local.get(LOG_KEY);
   const arr = Array.isArray(cur) ? cur : [];
   arr.push({ ts, message });
-  await chrome.storage.local.set({ [LOG_KEY]: arr.slice(-MAX_LOG) });
+  const trimmed = arr.slice(-MAX_LOG);
+  await chrome.storage.local.set({ [LOG_KEY]: trimmed });
 }
 
 async function loadLog(){
@@ -35,8 +44,10 @@ async function loadLog(){
 
 function renderLog(items){
   const box = $("logList");
+  if(!box) return;
   box.innerHTML = "";
-  const recent = (items || []).slice().reverse().slice(0, 30);
+  const recent = (items || []).slice().reverse().slice(0, 30); // show last 30 (latest first)
+
   if(!recent.length){
     const empty = document.createElement("div");
     empty.style.opacity = "0.7";
@@ -44,18 +55,16 @@ function renderLog(items){
     box.appendChild(empty);
     return;
   }
+
   for(const it of recent){
     const row = document.createElement("div");
     row.className = "log-item";
-
     const t = document.createElement("div");
     t.className = "log-time";
     t.textContent = fmtTime(it.ts);
-
     const m = document.createElement("div");
     m.className = "log-msg";
     m.textContent = it.message;
-
     row.appendChild(t);
     row.appendChild(m);
     box.appendChild(row);
@@ -63,7 +72,7 @@ function renderLog(items){
 }
 
 async function getActiveTab(){
-  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  const tabs = await chrome.tabs.query({active:true, currentWindow:true});
   const tab = tabs?.[0];
   if(!tab?.id) throw new Error("No active tab");
   return tab;
@@ -72,23 +81,12 @@ async function getActiveTab(){
 async function sendToActiveTab(message){
   const tab = await getActiveTab();
   const url = tab.url || "";
-  if(!url.startsWith("https://tinder.com/app/")) throw new Error("NOT_TINDER_APP");
+  if(!url.startsWith("https://tinder.com/app/recs")) throw new Error("NOT_RECS");
   return new Promise((resolve, reject)=>{
     chrome.tabs.sendMessage(tab.id, message, (resp)=>{
       const err = chrome.runtime.lastError;
       if(err) return reject(new Error(err.message));
       resolve(resp);
-    });
-  });
-}
-
-async function navigateToRecs(){
-  const tab = await getActiveTab();
-  return new Promise((resolve, reject)=>{
-    chrome.tabs.update(tab.id, { url: "https://tinder.com/app/recs" }, ()=>{
-      const err = chrome.runtime.lastError;
-      if(err) return reject(new Error(err.message));
-      resolve(true);
     });
   });
 }
@@ -107,7 +105,7 @@ async function loadSettings(){
 
 async function saveSettings(s){
   await chrome.storage.local.set({ tal_settings: s });
-  try{ await sendToActiveTab({ type: "SETTINGS_UPDATED" }); } catch {}
+  try{ await sendToActiveTab({ type: "SETTINGS_UPDATED" }); }catch{}
 }
 
 function renderChips(keywords){
@@ -117,7 +115,6 @@ function renderChips(keywords){
     const el = document.createElement("div");
     el.className = "chip";
     el.textContent = kw;
-
     const b = document.createElement("button");
     b.textContent = "×";
     b.title = "Remove";
@@ -128,7 +125,6 @@ function renderChips(keywords){
       applyToUI(s);
       await appendLog(`Keyword removed: ${kw}`);
     });
-
     el.appendChild(b);
     chips.appendChild(el);
   });
@@ -158,34 +154,40 @@ async function refreshStatus(){
     const res = await sendToActiveTab({ type: "STATUS" });
     if(res?.ok) setStatus(res.running ? "Running…" : "Stopped");
     else setStatus("Open tinder.com/app/recs");
-  } catch {
+  }catch{
     setStatus("Open tinder.com/app/recs");
   }
 }
 
 async function pollUntilReady(timeoutMs=9000, intervalMs=500){
   const start = Date.now();
-  while(Date.now() - start < timeoutMs){
+  while(Date.now()-start < timeoutMs){
     try{
       const res = await sendToActiveTab({ type: "STATUS" });
       if(res?.ok){
         setStatus(res.running ? "Running…" : "Stopped");
         return;
       }
-    } catch {}
+    }catch{}
     await new Promise(r=>setTimeout(r, intervalMs));
   }
   setStatus("Open tinder.com/app/recs");
 }
 
 document.addEventListener("DOMContentLoaded", async ()=>{
-  applyToUI(await loadSettings());
+  const s = await loadSettings();
+  applyToUI(s);
   await refreshStatus();
 
+  // load + render log
   renderLog(await loadLog());
-  chrome.storage.onChanged.addListener((changes, area)=>{
-    if(area !== "local") return;
-    if(changes[LOG_KEY]) renderLog(changes[LOG_KEY].newValue || []);
+
+  // live updates
+  chrome.storage.onChanged.addListener((changes, areaName)=>{
+    if(areaName !== "local") return;
+    if(changes[LOG_KEY]){
+      renderLog(changes[LOG_KEY].newValue || []);
+    }
   });
 
   $("clearLogBtn")?.addEventListener("click", async ()=>{
@@ -199,15 +201,11 @@ document.addEventListener("DOMContentLoaded", async ()=>{
     cur.ageMin = Number($("ageMin").value);
     cur.ageMax = Number($("ageMax").value);
     if(cur.ageMin > cur.ageMax) cur.ageMin = cur.ageMax;
-
     cur.distEnabled = $("distEnabled").checked;
     cur.maxKm = Number($("maxKm").value);
-
     cur.picsEnabled = $("picsEnabled").checked;
     cur.minPics = Number($("minPics").value);
-
     cur.kwEnabled = $("kwEnabled").checked;
-
     await saveSettings(cur);
     applyToUI(cur);
   };
@@ -218,7 +216,6 @@ document.addEventListener("DOMContentLoaded", async ()=>{
   $("kwAddBtn").addEventListener("click", async ()=>{
     const val = ($("kwInput").value || "").trim();
     if(!val) return;
-
     const cur = await loadSettings();
     const lower = val.toLowerCase();
     if(!cur.bannedKeywords.map(x=>String(x).toLowerCase()).includes(lower)){
@@ -238,17 +235,9 @@ document.addEventListener("DOMContentLoaded", async ()=>{
     try{
       setStatus("Starting…");
       await appendLog("Start clicked");
-
-      const tab = await getActiveTab();
-      const url = tab.url || "";
-      if(!url.startsWith("https://tinder.com/app/recs")){
-        await navigateToRecs();
-        await pollUntilReady(12000, 600);
-      }
-
       await sendToActiveTab({ type: "START" });
       await pollUntilReady();
-    } catch {
+    }catch{
       setStatus("Open tinder.com/app/recs");
     }
   });
@@ -257,7 +246,7 @@ document.addEventListener("DOMContentLoaded", async ()=>{
     try{
       await appendLog("Stop clicked");
       await sendToActiveTab({ type: "STOP" });
-    } finally {
+    }finally{
       setStatus("Stopped");
     }
   });
