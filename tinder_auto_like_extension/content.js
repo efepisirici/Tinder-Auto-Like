@@ -1,12 +1,14 @@
-// content.js (MV3) - tinder.com/app/*
+// content.js (MV3) - tinder.com/app/recs*
+// START -> chrome.storage state -> refresh once -> wait UI -> loop
+// Each iteration: Open Profile -> wait 1s -> read profile -> (NOPE if filters fail) else LIKE
 //
-// What this does (safe version):
-// - Runs only when started from popup (state in chrome.storage.local)
-// - URL guard: every cycle ensures you are on /app/recs (or /app/recs/profile). Otherwise navigates to /app/recs
-// - Waits UI
-// - Opens profile panel (best effort) and parses: About, Distance, Age, Picture count
-// - Applies filters and logs decision + reasons to tal_log
-// - DOES NOT execute Like/Nope automatically (placeholder only)
+// Filters from chrome.storage.local 'tal_settings':
+// - Age range (if enabled)
+// - Max distance km (if enabled)
+// - Min pictures (if enabled, best-effort)
+// - Banned keywords in About me (if enabled)
+//
+// Trace: writes to chrome.storage.local key 'tal_log' (last ~60 entries)
 
 const DEFAULT_SETTINGS = {
   ageEnabled: true, ageMin: 25, ageMax: 35,
@@ -15,7 +17,7 @@ const DEFAULT_SETTINGS = {
   kwEnabled: true, bannedKeywords: []
 };
 
-const STATE_KEY = "tal_state"; // { running: bool }
+const STATE_KEY = "tal_state";        // { running: bool, needRefresh: bool }
 const LOG_KEY = "tal_log";
 const MAX_LOG = 60;
 
@@ -32,39 +34,21 @@ async function appendLog(message){
   await chrome.storage.local.set({ [LOG_KEY]: arr.slice(-MAX_LOG) });
 }
 
-/* ---------- navigation guard ---------- */
-
-function isAllowedRecsUrl(){
-  return location.href.startsWith("https://tinder.com/app/recs");
+async function pressKey(key){
+  // Dispatch key events on the document (Tinder supports keyboard shortcuts)
+  const target = document.activeElement || document.body || document.documentElement;
+  const opts = { key, code: key, bubbles: true, cancelable: true };
+  target.dispatchEvent(new KeyboardEvent("keydown", opts));
+  target.dispatchEvent(new KeyboardEvent("keyup", opts));
+  await sleep(80);
 }
 
-async function ensureOnRecs(){
-  // Allowed:
-  // - https://tinder.com/app/recs
-  // - https://tinder.com/app/recs/profile
-  if (isAllowedRecsUrl()) return true;
-
-  await appendLog(`Redirecting to /app/recs (was: ${location.pathname})`);
-  try{
-    location.href = "https://tinder.com/app/recs";
-  }catch(e){
-    console.warn("[Tinder Auto Like] redirect failed", e);
-  }
-  return false; // stop current execution, navigation will happen
+async function pressNope(){
+  await pressKey("ArrowLeft");
 }
 
-/* ---------- overlays ---------- */
-
-function normalizeText(s){ return String(s || "").toLowerCase(); }
-
-function findByLabelOrText(text){
-  const t = String(text).trim().toLowerCase();
-  const aria = [...document.querySelectorAll("button[aria-label],[role='button'][aria-label]")]
-    .find(e => (e.getAttribute("aria-label")||"").trim().toLowerCase().includes(t));
-  if(aria) return aria;
-
-  return [...document.querySelectorAll("button,[role='button'],a")]
-    .find(e => (e.textContent||"").trim().toLowerCase().includes(t)) || null;
+async function pressLike(){
+  await pressKey("ArrowRight");
 }
 
 function safeClick(el){
@@ -79,6 +63,18 @@ function safeClick(el){
     return false;
   }
 }
+
+function findByLabelOrText(text){
+  const t = String(text).trim().toLowerCase();
+  const aria = [...document.querySelectorAll("button[aria-label],[role='button'][aria-label]")]
+    .find(e => (e.getAttribute("aria-label")||"").trim().toLowerCase().includes(t));
+  if(aria) return aria;
+
+  return [...document.querySelectorAll("button,[role='button'],a")]
+    .find(e => (e.textContent||"").trim().toLowerCase().includes(t)) || null;
+}
+
+/* ---------- overlays ---------- */
 
 function isOverlayPresent(){
   return Boolean(
@@ -151,8 +147,8 @@ async function loadSettings(){
 }
 
 async function loadState(){
-  const { [STATE_KEY]: st } = await chrome.storage.local.get(STATE_KEY);
-  return Object.assign({ running:false }, st || {});
+  const { tal_state } = await chrome.storage.local.get(STATE_KEY);
+  return Object.assign({ running:false, needRefresh:false }, tal_state || {});
 }
 
 async function saveState(state){
@@ -161,12 +157,7 @@ async function saveState(state){
 
 /* ---------- profile parsing ---------- */
 
-function compactAbout(about){
-  const s = String(about || "").replace(/\s+/g, " ").trim();
-  if(!s) return "";
-  const max = 60;
-  return s.length > max ? (s.slice(0, max-1) + "…") : s;
-}
+function normalizeText(s){ return String(s || "").toLowerCase(); }
 
 function getAboutMeText(){
   const headings = [...document.querySelectorAll("h1,h2,h3,div[role='heading']")];
@@ -184,6 +175,14 @@ function getAboutMeText(){
   texts.sort((a,b)=>b.length-a.length);
   return texts[0] || "";
 }
+
+function compactAbout(about){
+  const s = String(about || "").replace(/\s+/g, " ").trim();
+  if(!s) return "";
+  const max = 60;
+  return s.length > max ? (s.slice(0, max-1) + "…") : s;
+}
+
 
 function getDistanceKm(){
   const nodes = [...document.querySelectorAll("div,span,li,p")];
@@ -276,7 +275,7 @@ async function waitForCoreUI(timeoutMs=20000){
       continue;
     }
 
-    if(findByLabelOrText("open profile") || findByLabelOrText("info") || findByLabelOrText("details")){
+    if(findByLabelOrText("like") || findByLabelOrText("open profile") || findByLabelOrText("info")){
       return true;
     }
     await sleep(300);
@@ -284,9 +283,15 @@ async function waitForCoreUI(timeoutMs=20000){
   return false;
 }
 
-/* ---------- decision + logging ---------- */
+/* ---------- actions ---------- */
 
-async function decideAndLog(){
+async function clickNope(){
+  // Prefer keyboard to avoid swapped/moved buttons
+  await pressNope();
+  return true;
+}
+
+async function decideAndAct(){
   settings = await loadSettings();
 
   for(let i=0;i<6 && isOverlayPresent();i++){
@@ -299,7 +304,7 @@ async function decideAndLog(){
   if(!openProfile) return "open-profile-not-found";
   safeClick(openProfile);
 
-  await sleep(1000); // required gap you wanted
+  await sleep(1000); // required gap
 
   for(let i=0;i<4 && isOverlayPresent();i++){
     const did = await dismissOverlayOnce();
@@ -327,23 +332,27 @@ async function decideAndLog(){
     if(hit) reasons.push(`keyword "${hit}"`);
   }
 
-  const aboutSnippet = compactAbout(about);
-
   if(reasons.length){
-    await appendLog(aboutSnippet ? `REJECT (${reasons.join(", ")}) — ${aboutSnippet}` : `REJECT (${reasons.join(", ")})`);
+    clickNope();
+    await sleep(1000);
+    const aboutSnippet = compactAbout(about);
+    await appendLog(aboutSnippet ? `NOPE (${reasons.join(", ")}) — ${aboutSnippet}` : `NOPE (${reasons.join(", ")})`);
     return `rejected(${reasons.join("+")})`;
   }
 
-  await appendLog(aboutSnippet ? `PASS — ${aboutSnippet}` : "PASS");
-  return "passed";
+  // Prefer keyboard to avoid swapped/moved buttons
+  await pressLike();
+  await sleep(1000);
+  // include About Me snippet in LIKE log (max 80 chars)
+  const aboutSnippet = about ? about.replace(/\s+/g, " ").slice(0, 80) : "";
+  await appendLog(aboutSnippet ? `LIKE — "${aboutSnippet}"` : "LIKE");
+  return "liked";
 }
 
 /* ---------- loop ---------- */
 
 async function runLoop(){
   await appendLog("Loop started");
-
-  if(!(await ensureOnRecs())) return;
 
   const ready = await waitForCoreUI();
   if(!ready){
@@ -353,16 +362,10 @@ async function runLoop(){
 
   while(isRunning){
     try{
-      // every cycle starts with URL check (your requirement)
-      if(!(await ensureOnRecs())) return;
-
-      const res = await decideAndLog();
-      console.log("[Tinder Helper]", res);
-
-      // small pacing so logs are readable
-      await sleep(800);
+      const res = await decideAndAct();
+      console.log("[Tinder Auto Like]", res);
     }catch(e){
-      console.warn("[Tinder Helper] error", e);
+      console.warn("[Tinder Auto Like] error", e);
       await appendLog(`Error: ${String(e?.message || e)}`);
       await sleep(1000);
     }
@@ -374,7 +377,7 @@ async function runLoop(){
 /* ---------- resume on load ---------- */
 
 (async function resumeIfNeeded(){
-  if(!location.href.startsWith("https://tinder.com/app/")) return;
+  if(!location.href.startsWith("https://tinder.com/app/recs")) return;
 
   settings = await loadSettings();
   const st = await loadState();
@@ -392,7 +395,7 @@ chrome.runtime.onMessage.addListener((msg, _s, sendResponse)=>{
 
     if(msg.type === "START"){
       isRunning = true;
-      await saveState({ running: true });
+      await saveState({ running: true, needRefresh: false });
       await appendLog("START received");
       runLoop();
       sendResponse({ ok:true, running:true });
@@ -401,7 +404,7 @@ chrome.runtime.onMessage.addListener((msg, _s, sendResponse)=>{
 
     if(msg.type === "STOP"){
       isRunning = false;
-      await saveState({ running: false });
+      await saveState({ running: false, needRefresh: false });
       await appendLog("STOP received");
       sendResponse({ ok:true, running:false });
       return;
