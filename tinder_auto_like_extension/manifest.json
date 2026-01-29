@@ -23,7 +23,7 @@
   "content_scripts": [
     {
       "matches": [
-        "https://tinder.com/app/recs*"
+        "https://tinder.com/app/*"
       ],
       "js": [
         "content.js"
